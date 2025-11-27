@@ -20,16 +20,24 @@ export function useRoom(
     let active = true
 
     const load = async () => {
-      const { data: r } = await supabase.from('rooms').select('*').eq('id', roomId).maybeSingle()
+      const { data: r, error: roomError } = await supabase.from('rooms').select('*').eq('id', roomId).maybeSingle()
+      if (roomError) {
+        console.error('Error loading room:', roomError)
+      }
       if (!active) return
       setRoom(r as Room)
 
-      const { data: m } = await supabase
+      const { data: m, error: membersError } = await supabase
         .from('room_members')
         .select('*, profiles:profiles(name, avatar_url)')
         .eq('room_id', roomId)
+
+      if (membersError) {
+        console.error('Error loading members:', membersError)
+      }
       if (!active) return
       setMembers((m as unknown as RoomMember[]) || [])
+
 
       channelRef.current = subscribeToRoom(roomId, {
         onPresence: setPresences,
