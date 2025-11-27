@@ -1,30 +1,29 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { generateRoomCode } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 
 export default function RoomCreatePage() {
   const router = useRouter()
-  const supabase = createClient()
 
   const createRoom = async () => {
     try {
-      const code = generateRoomCode()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Non authentifié')
-      const { data, error } = await supabase
-        .from('rooms')
-        .insert({ code, creator_id: user.id })
-        .select()
-        .single()
-      if (error) throw error
+      const response = await fetch('/api/rooms/create', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur inconnue')
+      }
+
       toast.success('Room créée avec succès')
-      if (data) router.push(`/room/${data.id}`)
+      if (data.room) router.push(`/room/${data.room.id}`)
     } catch (e) {
-      toast.error("Erreur lors de la création de la room")
+      console.error("Error creating room:", e)
+      toast.error("Erreur lors de la création de la room: " + (e instanceof Error ? e.message : String(e)))
     }
   }
 
