@@ -13,5 +13,14 @@ export async function POST() {
     iceCandidatesB: [],
   })
   
+  console.log(`[API] Room created: ${roomId}, Total rooms: ${roomStore.size}`)
+  
   return NextResponse.json({ roomId })
+}
+
+export async function GET() {
+  return NextResponse.json({ 
+    rooms: roomStore.size,
+    roomIds: Array.from(roomStore.keys())
+  })
 }

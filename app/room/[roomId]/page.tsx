@@ -25,10 +25,12 @@ export default function RoomPage() {
   const [partnerLikes, setPartnerLikes] = useState<number[]>([])
   const [partnerDone, setPartnerDone] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [debugInfo, setDebugInfo] = useState('')
   
   const { fetchPlaces, getLocation, loading: loadingPlaces } = usePlaces()
 
   const handleMessage = useCallback((message: SwipeMessage) => {
+    console.log('[Room] Received message:', message.type)
     if (message.type === 'PLACES' && message.places) {
       setPlaces(message.places)
       setState('swiping')
@@ -43,14 +45,18 @@ export default function RoomPage() {
   }, [])
 
   const handleConnected = useCallback(() => {
+    console.log('[Room] Connected!')
     setState('connected')
+    setDebugInfo('Connecté!')
   }, [])
 
   const handleDisconnected = useCallback(() => {
+    console.log('[Room] Disconnected')
     setState('waiting')
+    setDebugInfo('Déconnecté')
   }, [])
 
-  const { isConnected, isConnecting, sendMessage, createOffer, acceptOffer } = useWebRTC({
+  const { isConnected, isConnecting, error, sendMessage, createOffer, acceptOffer } = useWebRTC({
     roomId,
     role,
     onMessage: handleMessage,
@@ -59,18 +65,23 @@ export default function RoomPage() {
   })
 
   useEffect(() => {
-    if (role === 'A') {
+    if (role === 'A' && state === 'waiting') {
+      console.log('[Room] Role A - Creating offer')
       setState('connecting')
       createOffer()
     }
-  }, [role, createOffer])
+  }, [role, state, createOffer])
 
   useEffect(() => {
     if (role === 'B' && state === 'waiting') {
       const tryConnect = async () => {
+        console.log('[Room] Role B - Trying to accept offer')
         setState('connecting')
         const connected = await acceptOffer()
         if (!connected) {
+          console.log('[Room] No offer yet, retrying in 2s')
+          setDebugInfo('Recherche de la room...')
+          setState('waiting')
           setTimeout(tryConnect, 2000)
         }
       }
@@ -78,7 +89,14 @@ export default function RoomPage() {
     }
   }, [role, state, acceptOffer])
 
+  useEffect(() => {
+    if (isConnected && state === 'connecting') {
+      setState('connected')
+    }
+  }, [isConnected, state])
+
   const startGame = async () => {
+    console.log('[Room] Starting game')
     const location = await getLocation()
     const fetchedPlaces = await fetchPlaces(location?.lat, location?.lng)
     setPlaces(fetchedPlaces)
@@ -110,19 +128,19 @@ export default function RoomPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const goToMatches = () => {
+  const goToMatches = useCallback(() => {
     const matchedIndices = myLikes.filter(i => partnerLikes.includes(i))
     const matchedPlaces = matchedIndices.map(i => places[i])
     
     sessionStorage.setItem('matchedPlaces', JSON.stringify(matchedPlaces))
     router.push(`/match/${roomId}`)
-  }
+  }, [myLikes, partnerLikes, places, roomId, router])
 
   useEffect(() => {
     if (state === 'done' && partnerDone) {
       goToMatches()
     }
-  }, [state, partnerDone])
+  }, [state, partnerDone, goToMatches])
 
   if (state === 'waiting' || state === 'connecting') {
     return (
@@ -134,7 +152,7 @@ export default function RoomPage() {
           {role === 'A' ? (
             <>
               <p className="text-gray-600 mb-6">
-                {isConnecting ? 'En attente de votre partenaire...' : 'Partagez ce code avec votre partenaire'}
+                {isConnected ? 'Partenaire connecté!' : 'En attente de votre partenaire...'}
               </p>
               
               <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
@@ -153,11 +171,29 @@ export default function RoomPage() {
                   </Button>
                 </div>
               )}
+
+              {!isConnected && (
+                <div className="mt-4">
+                  <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">
+                    Partagez le code ci-dessus avec votre partenaire
+                  </p>
+                </div>
+              )}
+
+              {error && (
+                <p className="mt-4 text-red-500 text-sm">{error}</p>
+              )}
             </>
           ) : (
             <>
-              <p className="text-gray-600 mb-4">Connexion en cours...</p>
+              <p className="text-gray-600 mb-4">
+                {debugInfo || 'Connexion en cours...'}
+              </p>
               <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              {error && (
+                <p className="mt-4 text-red-500 text-sm">{error}</p>
+              )}
             </>
           )}
         </div>
@@ -175,6 +211,20 @@ export default function RoomPage() {
           <div className="mt-6">
             <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto" />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (state === 'connected' && role === 'A') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="text-center">
+          <div className="text-6xl mb-6">✨</div>
+          <h1 className="text-2xl font-bold mb-2">Partenaire connecté!</h1>
+          <Button onClick={startGame} disabled={loadingPlaces} size="lg">
+            {loadingPlaces ? 'Chargement des lieux...' : 'Commencer à swiper'}
+          </Button>
         </div>
       </div>
     )
