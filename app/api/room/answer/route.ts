@@ -6,14 +6,14 @@ export async function POST(request: NextRequest) {
   
   console.log(`[API] POST /answer - roomId: ${roomId}, hasAnswer: ${!!answer}`)
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     console.log(`[API] Room not found: ${roomId}`)
     return NextResponse.json({ error: 'Room not found' }, { status: 404 })
   }
   
   room.answer = answer
-  roomStore.set(roomId, room)
+  await roomStore.set(roomId, room)
   
   console.log(`[API] Answer stored for room: ${roomId}`)
   
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'roomId required' }, { status: 400 })
   }
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     return NextResponse.json({ error: 'Room not found', answer: null }, { status: 200 })
   }

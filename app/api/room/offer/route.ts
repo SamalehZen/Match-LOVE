@@ -5,16 +5,15 @@ export async function POST(request: NextRequest) {
   const { roomId, offer } = await request.json()
   
   console.log(`[API] POST /offer - roomId: ${roomId}, hasOffer: ${!!offer}`)
-  console.log(`[API] Available rooms: ${Array.from(roomStore.keys()).join(', ')}`)
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     console.log(`[API] Room not found: ${roomId}`)
     return NextResponse.json({ error: 'Room not found' }, { status: 404 })
   }
   
   room.offer = offer
-  roomStore.set(roomId, room)
+  await roomStore.set(roomId, room)
   
   console.log(`[API] Offer stored for room: ${roomId}`)
   
@@ -25,13 +24,12 @@ export async function GET(request: NextRequest) {
   const roomId = request.nextUrl.searchParams.get('roomId')
   
   console.log(`[API] GET /offer - roomId: ${roomId}`)
-  console.log(`[API] Available rooms: ${Array.from(roomStore.keys()).join(', ')}`)
   
   if (!roomId) {
     return NextResponse.json({ error: 'roomId required' }, { status: 400 })
   }
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     console.log(`[API] Room not found: ${roomId}`)
     return NextResponse.json({ error: 'Room not found', offer: null }, { status: 200 })

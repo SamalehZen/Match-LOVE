@@ -4,7 +4,7 @@ import { roomStore } from '@/lib/room-store'
 export async function POST(request: NextRequest) {
   const { roomId, candidate, role } = await request.json()
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     console.log(`[API] POST /ice - Room not found: ${roomId}`)
     return NextResponse.json({ error: 'Room not found' }, { status: 404 })
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     room.iceCandidatesB.push(candidate)
   }
   
-  roomStore.set(roomId, room)
+  await roomStore.set(roomId, room)
   
   console.log(`[API] ICE candidate stored - room: ${roomId}, role: ${role}, totalA: ${room.iceCandidatesA.length}, totalB: ${room.iceCandidatesB.length}`)
   
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'roomId and role required' }, { status: 400 })
   }
   
-  const room = roomStore.get(roomId)
+  const room = await roomStore.get(roomId)
   if (!room) {
     return NextResponse.json({ candidates: [] })
   }

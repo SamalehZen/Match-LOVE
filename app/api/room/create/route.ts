@@ -6,21 +6,18 @@ export async function POST() {
   
   const roomId = generateRoomId()
   
-  roomStore.set(roomId, {
+  await roomStore.set(roomId, {
     id: roomId,
     createdAt: Date.now(),
     iceCandidatesA: [],
     iceCandidatesB: [],
   })
   
-  console.log(`[API] Room created: ${roomId}, Total rooms: ${roomStore.size}`)
+  console.log(`[API] Room created: ${roomId}`)
   
   return NextResponse.json({ roomId })
 }
 
 export async function GET() {
-  return NextResponse.json({ 
-    rooms: roomStore.size,
-    roomIds: Array.from(roomStore.keys())
-  })
+  return NextResponse.json({ status: 'ok' })
 }
