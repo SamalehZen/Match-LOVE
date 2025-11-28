@@ -1,65 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { Place } from '@/lib/types'
 
-const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY || ''
+const SERPER_API_KEY = process.env.SERPER_API_KEY || ''
 
 export async function GET(request: NextRequest) {
   const lat = request.nextUrl.searchParams.get('lat')
   const lng = request.nextUrl.searchParams.get('lng')
   const type = request.nextUrl.searchParams.get('type') || 'restaurant'
-  const radius = request.nextUrl.searchParams.get('radius') || '2000'
 
   if (!lat || !lng) {
     return NextResponse.json({ error: 'lat and lng required' }, { status: 400 })
   }
 
-  if (!GOOGLE_API_KEY) {
+  if (!SERPER_API_KEY) {
+    console.log('No SERPER_API_KEY, using mock data')
     return NextResponse.json({ places: getMockPlaces() })
   }
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${GOOGLE_API_KEY}`
+    const query = `${type}s near ${lat},${lng}`
     
-    const response = await fetch(url)
-    const data = await response.json()
+    const response = await fetch('https://google.serper.dev/places', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: query,
+        gl: 'fr',
+        hl: 'fr',
+      }),
+    })
 
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.error('Google Places API error:', data.status)
+    if (!response.ok) {
+      console.error('Serper API error:', response.status)
       return NextResponse.json({ places: getMockPlaces() })
     }
 
-    const places: Place[] = await Promise.all(
-      (data.results || []).slice(0, 20).map(async (place: any) => {
-        let photoUrl = undefined
-        if (place.photos && place.photos[0]) {
-          photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
-        }
+    const data = await response.json()
 
-        return {
-          id: place.place_id,
-          name: place.name,
-          rating: place.rating || 0,
-          priceLevel: place.price_level,
-          vicinity: place.vicinity,
-          photoUrl,
-          types: place.types || [],
-          location: {
-            lat: place.geometry.location.lat,
-            lng: place.geometry.location.lng,
-          },
-        }
-      })
-    )
+    if (!data.places || data.places.length === 0) {
+      return NextResponse.json({ places: getMockPlaces() })
+    }
+
+    const places: Place[] = data.places.slice(0, 20).map((place: any, index: number) => ({
+      id: place.cid || `place-${index}`,
+      name: place.title || 'Unknown',
+      rating: place.rating || 0,
+      priceLevel: parsePriceLevel(place.priceLevel),
+      vicinity: place.address || '',
+      photoUrl: place.thumbnailUrl || getPlaceholderImage(type),
+      types: place.category ? [place.category.toLowerCase()] : [type],
+      location: {
+        lat: place.latitude || parseFloat(lat),
+        lng: place.longitude || parseFloat(lng),
+      },
+    }))
 
     return NextResponse.json({ places })
   } catch (error) {
-    console.error('Error fetching places:', error)
+    console.error('Error fetching places from Serper:', error)
     return NextResponse.json({ places: getMockPlaces() })
   }
 }
 
+function parsePriceLevel(price: string | undefined): number {
+  if (!price) return 0
+  const count = (price.match(/\$/g) || price.match(/€/g) || []).length
+  return Math.min(count, 4)
+}
+
+function getPlaceholderImage(type: string): string {
+  const images: Record<string, string> = {
+    restaurant: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
+    cafe: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800',
+    bar: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=800',
+  }
+  return images[type] || images.restaurant
+}
+
 function getMockPlaces(): Place[] {
-  const mockPlaces: Place[] = [
+  return [
     {
       id: '1',
       name: 'Le Petit Bistro',
@@ -141,5 +163,4 @@ function getMockPlaces(): Place[] {
       location: { lat: 48.8656, lng: 2.3785 },
     },
   ]
-  return mockPlaces
 }
