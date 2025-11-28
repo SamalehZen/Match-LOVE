@@ -1,19 +1,38 @@
-import * as React from 'react'
+import { forwardRef } from 'react'
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'default' | 'secondary' | 'outline' | 'destructive'
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost'
+  size?: 'sm' | 'md' | 'lg'
 }
 
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className = '', variant = 'default', ...props }, ref) => {
-    const base = 'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none h-10 px-4 py-2'
-    const variants: Record<NonNullable<ButtonProps['variant']>, string> = {
-      default: 'bg-black text-white hover:bg-black/90',
-      secondary: 'bg-neutral-100 hover:bg-neutral-200 text-neutral-900',
-      outline: 'border border-neutral-300 hover:bg-neutral-100',
-      destructive: 'bg-red-600 text-white hover:bg-red-700',
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className = '', variant = 'primary', size = 'md', children, disabled, ...props }, ref) => {
+    const baseStyles = 'inline-flex items-center justify-center font-semibold rounded-full transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none'
+    
+    const variants = {
+      primary: 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 hover:shadow-xl hover:shadow-pink-500/40',
+      secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200',
+      outline: 'border-2 border-pink-500 text-pink-500 hover:bg-pink-50',
+      ghost: 'text-gray-600 hover:bg-gray-100',
     }
-    return <button ref={ref} className={`${base} ${variants[variant]} ${className}`} {...props} />
+    
+    const sizes = {
+      sm: 'px-4 py-2 text-sm',
+      md: 'px-6 py-3 text-base',
+      lg: 'px-8 py-4 text-lg',
+    }
+
+    return (
+      <button
+        ref={ref}
+        className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
+        disabled={disabled}
+        {...props}
+      >
+        {children}
+      </button>
+    )
   }
 )
+
 Button.displayName = 'Button'

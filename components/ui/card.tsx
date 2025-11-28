@@ -1,11 +1,12 @@
-import * as React from 'react'
+interface CardProps {
+  children: React.ReactNode
+  className?: string
+}
 
-export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-lg border bg-white ${className}`}>{children}</div>
-}
-export function CardHeader({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`p-4 border-b ${className}`}>{children}</div>
-}
-export function CardContent({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`p-4 ${className}`}>{children}</div>
+export function Card({ children, className = '' }: CardProps) {
+  return (
+    <div className={`bg-white rounded-3xl shadow-xl overflow-hidden ${className}`}>
+      {children}
+    </div>
+  )
 }
