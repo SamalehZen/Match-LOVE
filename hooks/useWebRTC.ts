@@ -15,11 +15,13 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [channelReady, setChannelReady] = useState(false)
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const dcRef = useRef<RTCDataChannel | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const icePollRef = useRef<NodeJS.Timeout | null>(null)
   const processedCandidates = useRef<Set<string>>(new Set())
+  const pendingMessages = useRef<SwipeMessage[]>([])
 
   const onMessageRef = useRef(onMessage)
   const onConnectedRef = useRef(onConnected)
@@ -31,50 +33,83 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
     onDisconnectedRef.current = onDisconnected
   }, [onMessage, onConnected, onDisconnected])
 
+  const flushPendingMessages = useCallback(() => {
+    if (dcRef.current && dcRef.current.readyState === 'open' && pendingMessages.current.length > 0) {
+      console.log(`[WebRTC] Flushing ${pendingMessages.current.length} pending messages`)
+      pendingMessages.current.forEach(msg => {
+        dcRef.current!.send(JSON.stringify(msg))
+        console.log('[WebRTC] Sent pending message:', msg.type)
+      })
+      pendingMessages.current = []
+    }
+  }, [])
+
   const sendMessage = useCallback((message: SwipeMessage) => {
+    console.log('[WebRTC] sendMessage called:', message.type, 'channel ready:', dcRef.current?.readyState)
+    
     if (dcRef.current && dcRef.current.readyState === 'open') {
-      dcRef.current.send(JSON.stringify(message))
-      console.log('[WebRTC] Message sent:', message.type)
+      try {
+        const data = JSON.stringify(message)
+        console.log('[WebRTC] Sending message, size:', data.length)
+        dcRef.current.send(data)
+        console.log('[WebRTC] Message sent successfully:', message.type)
+      } catch (e) {
+        console.error('[WebRTC] Error sending message:', e)
+        pendingMessages.current.push(message)
+      }
     } else {
-      console.warn('[WebRTC] Cannot send message, channel not open')
+      console.log('[WebRTC] Channel not ready, queuing message:', message.type)
+      pendingMessages.current.push(message)
     }
   }, [])
 
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
-    console.log('[WebRTC] Setting up data channel')
+    console.log('[WebRTC] Setting up data channel, current state:', channel.readyState)
     dcRef.current = channel
     
     channel.onopen = () => {
-      console.log('[WebRTC] Data channel OPEN')
+      console.log('[WebRTC] ✅ Data channel OPEN')
+      setChannelReady(true)
       setIsConnected(true)
       setIsConnecting(false)
       onConnectedRef.current()
+      setTimeout(flushPendingMessages, 100)
     }
     
     channel.onclose = () => {
       console.log('[WebRTC] Data channel CLOSED')
+      setChannelReady(false)
       setIsConnected(false)
       onDisconnectedRef.current()
     }
 
     channel.onerror = (e) => {
       console.error('[WebRTC] Data channel error:', e)
+      setError('Erreur de connexion')
     }
     
     channel.onmessage = (event) => {
+      console.log('[WebRTC] 📩 Message received, size:', event.data.length)
       try {
         const message = JSON.parse(event.data) as SwipeMessage
-        console.log('[WebRTC] Message received:', message.type)
+        console.log('[WebRTC] Parsed message type:', message.type)
         onMessageRef.current(message)
       } catch (e) {
         console.error('[WebRTC] Failed to parse message:', e)
       }
     }
-  }, [])
+
+    if (channel.readyState === 'open') {
+      console.log('[WebRTC] Channel already open')
+      setChannelReady(true)
+      setIsConnected(true)
+      setIsConnecting(false)
+      onConnectedRef.current()
+    }
+  }, [flushPendingMessages])
 
   const sendIceCandidate = useCallback(async (candidate: RTCIceCandidate) => {
     try {
-      console.log('[WebRTC] Sending ICE candidate')
       await fetch('/api/room/ice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,15 +132,14 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
             processedCandidates.current.add(candidateStr)
             try {
               await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate))
-              console.log('[WebRTC] Added ICE candidate')
             } catch (e) {
-              console.error('[WebRTC] Error adding ICE candidate:', e)
+              // Ignore errors for already added candidates
             }
           }
         }
       }
     } catch (e) {
-      console.error('[WebRTC] Error polling ICE candidates:', e)
+      // Silent fail for polling
     }
   }, [roomId, role])
 
@@ -126,19 +160,11 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
 
       pc.onconnectionstatechange = () => {
         console.log('[WebRTC] Connection state:', pc.connectionState)
-        if (pc.connectionState === 'connected') {
-          setIsConnected(true)
-          setIsConnecting(false)
-        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-          setError('Connection failed')
-        }
       }
 
-      pc.oniceconnectionstatechange = () => {
-        console.log('[WebRTC] ICE connection state:', pc.iceConnectionState)
-      }
-
-      const channel = pc.createDataChannel('datematch', { ordered: true })
+      const channel = pc.createDataChannel('datematch', { 
+        ordered: true,
+      })
       setupDataChannel(channel)
 
       pc.onicecandidate = (event) => {
@@ -149,18 +175,12 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
 
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
-      console.log('[WebRTC] Offer created and set as local description')
 
-      const res = await fetch('/api/room/offer', {
+      await fetch('/api/room/offer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId, offer }),
       })
-      
-      if (!res.ok) {
-        throw new Error('Failed to store offer')
-      }
-      console.log('[WebRTC] Offer stored on server')
 
       pollingRef.current = setInterval(async () => {
         try {
@@ -168,7 +188,7 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
           const data = await res.json()
           
           if (data.answer && pcRef.current && !pcRef.current.remoteDescription) {
-            console.log('[WebRTC] Answer received, setting remote description')
+            console.log('[WebRTC] Answer received')
             await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.answer))
             
             if (pollingRef.current) {
@@ -200,12 +220,11 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
       const data = await res.json()
       
       if (!data.offer) {
-        console.log('[WebRTC] No offer available yet')
         setIsConnecting(false)
         return false
       }
 
-      console.log('[WebRTC] Offer received from server')
+      console.log('[WebRTC] Offer received')
 
       const pc = new RTCPeerConnection({
         iceServers: [
@@ -218,18 +237,10 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
 
       pc.onconnectionstatechange = () => {
         console.log('[WebRTC] Connection state:', pc.connectionState)
-        if (pc.connectionState === 'connected') {
-          setIsConnected(true)
-          setIsConnecting(false)
-        }
-      }
-
-      pc.oniceconnectionstatechange = () => {
-        console.log('[WebRTC] ICE connection state:', pc.iceConnectionState)
       }
 
       pc.ondatachannel = (event) => {
-        console.log('[WebRTC] Data channel received')
+        console.log('[WebRTC] 📡 Data channel received from peer')
         setupDataChannel(event.channel)
       }
 
@@ -240,22 +251,15 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer))
-      console.log('[WebRTC] Remote description set')
       
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
-      console.log('[WebRTC] Answer created and set as local description')
 
-      const answerRes = await fetch('/api/room/answer', {
+      await fetch('/api/room/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId, answer }),
       })
-
-      if (!answerRes.ok) {
-        throw new Error('Failed to store answer')
-      }
-      console.log('[WebRTC] Answer stored on server')
 
       icePollRef.current = setInterval(pollIceCandidates, 1000)
       
@@ -269,7 +273,6 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
   }, [roomId, setupDataChannel, sendIceCandidate, pollIceCandidates])
 
   const disconnect = useCallback(() => {
-    console.log('[WebRTC] Disconnecting')
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
@@ -287,6 +290,8 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
       pcRef.current = null
     }
     processedCandidates.current.clear()
+    pendingMessages.current = []
+    setChannelReady(false)
     setIsConnected(false)
     setIsConnecting(false)
   }, [])
@@ -300,6 +305,7 @@ export function useWebRTC({ roomId, role, onMessage, onConnected, onDisconnected
   return {
     isConnected,
     isConnecting,
+    channelReady,
     error,
     sendMessage,
     createOffer,

@@ -30,8 +30,9 @@ export default function RoomPage() {
   const { fetchPlaces, getLocation, loading: loadingPlaces } = usePlaces()
 
   const handleMessage = useCallback((message: SwipeMessage) => {
-    console.log('[Room] Received message:', message.type)
+    console.log('[Room] 📩 Received message:', message.type)
     if (message.type === 'PLACES' && message.places) {
+      console.log('[Room] Setting places, count:', message.places.length)
       setPlaces(message.places)
       setState('swiping')
     } else if (message.type === 'SWIPE' && message.value && message.index !== undefined) {
@@ -45,7 +46,7 @@ export default function RoomPage() {
   }, [])
 
   const handleConnected = useCallback(() => {
-    console.log('[Room] Connected!')
+    console.log('[Room] ✅ Connected!')
     setState('connected')
     setDebugInfo('Connecté!')
   }, [])
@@ -56,7 +57,7 @@ export default function RoomPage() {
     setDebugInfo('Déconnecté')
   }, [])
 
-  const { isConnected, isConnecting, error, sendMessage, createOffer, acceptOffer } = useWebRTC({
+  const { isConnected, isConnecting, channelReady, error, sendMessage, createOffer, acceptOffer } = useWebRTC({
     roomId,
     role,
     onMessage: handleMessage,
@@ -90,18 +91,31 @@ export default function RoomPage() {
   }, [role, state, acceptOffer])
 
   useEffect(() => {
-    if (isConnected && state === 'connecting') {
+    if (channelReady && state === 'connecting') {
+      console.log('[Room] Channel ready, setting state to connected')
       setState('connected')
     }
-  }, [isConnected, state])
+  }, [channelReady, state])
 
   const startGame = async () => {
-    console.log('[Room] Starting game')
+    console.log('[Room] Starting game, channelReady:', channelReady)
+    
+    if (!channelReady) {
+      setDebugInfo('Attente de la connexion...')
+      return
+    }
+    
     const location = await getLocation()
     const fetchedPlaces = await fetchPlaces(location?.lat, location?.lng)
+    
+    console.log('[Room] Places fetched:', fetchedPlaces.length)
     setPlaces(fetchedPlaces)
-    setState('swiping')
-    sendMessage({ type: 'PLACES', places: fetchedPlaces })
+    
+    setTimeout(() => {
+      console.log('[Room] Sending PLACES message')
+      sendMessage({ type: 'PLACES', places: fetchedPlaces })
+      setState('swiping')
+    }, 500)
   }
 
   const handleSwipe = (direction: 'LIKE' | 'NOPE') => {
@@ -152,7 +166,7 @@ export default function RoomPage() {
           {role === 'A' ? (
             <>
               <p className="text-gray-600 mb-6">
-                {isConnected ? 'Partenaire connecté!' : 'En attente de votre partenaire...'}
+                {channelReady ? 'Partenaire connecté!' : 'En attente de votre partenaire...'}
               </p>
               
               <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
@@ -163,7 +177,7 @@ export default function RoomPage() {
                 {copied ? '✓ Copié!' : 'Copier le lien'}
               </Button>
               
-              {isConnected && (
+              {channelReady && (
                 <div className="mt-6">
                   <p className="text-green-600 font-semibold mb-4">✓ Partenaire connecté!</p>
                   <Button onClick={startGame} disabled={loadingPlaces}>
@@ -172,7 +186,7 @@ export default function RoomPage() {
                 </div>
               )}
 
-              {!isConnected && (
+              {!channelReady && (
                 <div className="mt-4">
                   <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                   <p className="text-sm text-gray-500">
@@ -201,22 +215,22 @@ export default function RoomPage() {
     )
   }
 
-  if (state === 'connected' && role === 'B') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-6xl mb-6">✨</div>
-          <h1 className="text-2xl font-bold mb-2">Connecté!</h1>
-          <p className="text-gray-600">En attente que votre partenaire lance la partie...</p>
-          <div className="mt-6">
-            <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto" />
+  if (state === 'connected') {
+    if (role === 'B') {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+          <div className="text-center">
+            <div className="text-6xl mb-6">✨</div>
+            <h1 className="text-2xl font-bold mb-2">Connecté!</h1>
+            <p className="text-gray-600">En attente que votre partenaire lance la partie...</p>
+            <div className="mt-6">
+              <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            </div>
           </div>
         </div>
-      </div>
-    )
-  }
-
-  if (state === 'connected' && role === 'A') {
+      )
+    }
+    
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6">
         <div className="text-center">
